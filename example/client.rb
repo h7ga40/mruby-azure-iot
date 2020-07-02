@@ -22,6 +22,10 @@ module WeatherStation
 			"{\"Message\":\"Turning fan off with Method\"}"
 		end
 
+		def get_temperature_alert
+			(@temperature > 30) ? 'true' : 'false'
+		end
+
 		def set_fan_speed(fanSpeed)
 			@fanSpeed = fanSpeed
 			puts "set fan speed " + fanSpeed.to_s
@@ -33,19 +37,33 @@ module WeatherStation
 			if desired == nil
 				desired = json
 			end
-			fanSpeed = desired["fanSpeed"]
-			if fanSpeed == nil
-				puts peyload
-			else
-				value = fanSpeed["value"]
-				if value == nil
-					puts peyload
+			desired.each{|key, obj|
+				case key
+				when "fanSpeed"
+					value = obj["value"]
+					if value != nil
+						set_fan_speed(value)
+						desired[key] = {value: @fanSpeed, status: "success"}
+					else
+						desired[key] = nil
+					end
 				else
-					set_fan_speed(value)
+					desired[key] = nil
 				end
-			end
+			}
 
-			{fanSpeed: {value: @fanSpeed, status: "success"}}.to_json
+			desired.to_json
+		end
+
+		def get_message
+			data = {
+				windSpeed: @windSpeed,
+				temperature: @temperature,
+				humidity: @humidity,
+			}.to_json
+			message = AzureIoT::Message.new(data)
+			message.add_property('temperatureAlert', get_temperature_alert())
+			return message
 		end
 
 		def measure
@@ -66,10 +84,7 @@ client.set_twin(twin)
 
 while true do
 	twin.measure
-	data = {temperature: twin.temperature, humidity: twin.humidity}.to_json
-	message = AzureIoT::Message.new(data)
-
-	message.add_property('temperatureAlert', (twin.temperature > 30) ? 'true' : 'false')
+	message = twin.get_message
 
 	done = false
 	client.send_event(message) do
